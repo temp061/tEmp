@@ -4,8 +4,7 @@ module Utility.Prim (
                      module Utility.MThread,
                      module Utility.Message,
                      ClientThread,
-                     ClientState(..),
---                     Polymorphous(..),
+                     ClientState(..,)
                      DispatcherThread,
                      Procedure
                     ) where
