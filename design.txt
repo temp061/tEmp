@@ -1,0 +1,17 @@
+GUIを含むメッセージフロー図
+ClientThread                       DispatcherThread     ClientThread
+ModelThread(AI, Net, Operator) <-> DispatcherThread <-> ModelThread(other)
+                                         ^
+                                         |
+                                         v
+                                 UIThread :: ClientThread
+                                  + GUIComponent(Buttom, Window, ...)
+                                      + callback func (IO)
+                                  + CUIComponent(stdout, stdin, stderr, ...)
+                                      + adaptor func (IO)
+
+UIのメッセージ処理の詳細を隠すための階層構造
+tEmp
+ UI : procedure　　大枠を処理
+  CUI : stdin, stdout, stderr　　詳細な処理
+  GUI : button, window, ...　　　詳細な処理
