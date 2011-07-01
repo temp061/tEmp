@@ -8,12 +8,13 @@ module Main (main) where
 import qualified Data.Map as Map
 import Control.Concurrent
 import Utility.Prim
-import qualified UI.Operator as UI
+import qualified UI.InputOperator as UIIn
+import qualified UI.OutputOperator as UIOut
 import MetaData.Types
 import qualified MetaData.Operator as MetaData
 
 procedures :: [(Signature, Procedure, ClientState)] 
-procedures = [(UI, UI.operation, UnitState), (MetaData, MetaData.operation, CS emptyBinder)]
+procedures = [(UIIn, UIIn.operation, UnitState), (UIOut, UIOut.operation, UnitState), (MetaData, MetaData.operation, CS emptyBinder)]
 
 main :: IO ()
 main = runMT (threadManager procedures) () Map.empty

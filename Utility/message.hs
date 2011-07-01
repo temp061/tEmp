@@ -10,7 +10,7 @@ import Control.Applicative
 import Utility.MThread
 import MetaData.Types
 
-data Signature = UI | AI | Net | MetaData | System deriving (Eq, Ord, Show, Read)
+data Signature = AI | Net | MetaData | UIIn | UIOut | System deriving (Eq, Ord, Show, Read)
 
 newtype NormalMessage = NM String
 

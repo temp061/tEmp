@@ -24,7 +24,7 @@ handle :: NormalMessage -> ClientThread ()
 handle m  = let (op, args) = translate m
             in case Map.lookup op opMap >>= \handler -> handler args of
                  Just ct -> ct --operation --handler -> handler args
-                 Nothing -> post (UI, NM "error Operation error")
+                 Nothing -> post (UIOut, NM "error Operation error")
                >> operation
 
 handleOn :: (Binder -> Clip -> Binder) -> [String] -> Maybe (ClientThread ())
@@ -34,8 +34,7 @@ handleOn func args = Just $ do (CS s) <- getStatus
                                let dl = tokenize args
                                    cl = loop t dl
                                    Just b = cast s
-                               return $ map (func b) cl
-                               return ()
+                               setStatus $ CS $ head $ map (func b) cl
     where 
       loop :: UTCTime -> [(String, String)] -> [Clip]
       loop _ [] = []
@@ -44,7 +43,7 @@ handleOn func args = Just $ do (CS s) <- getStatus
 look :: [String] -> Maybe (ClientThread ())
 look _ = Just $ do (CS s) <- getStatus
                    let Just b :: Maybe Binder = cast s
-                   post (UI, NM $ "output " ++ show b)
+                   post (UIOut, NM $ "output " ++ show b)
                    return ()
 
 tokenize :: [String] -> [(String, String)]
