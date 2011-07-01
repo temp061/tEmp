@@ -18,13 +18,13 @@ opMap = Map.fromList [ (Add, handleOn add),
                      ]
 
 operation :: Procedure
-operation = fetch >>= handle
+operation = {- liftMT (putStrLn "MetaData.Operator.") >> -} fetch >>= handle
 
 handle :: NormalMessage -> ClientThread ()
 handle m  = let (op, args) = translate m
             in case Map.lookup op opMap >>= \handler -> handler args of
                  Just ct -> ct --operation --handler -> handler args
-                 Nothing -> post (UI, NM "Operation error")
+                 Nothing -> post (UI, NM "error Operation error")
                >> operation
 
 handleOn :: (Binder -> Clip -> Binder) -> [String] -> Maybe (ClientThread ())
@@ -44,7 +44,7 @@ handleOn func args = Just $ do (CS s) <- getStatus
 look :: [String] -> Maybe (ClientThread ())
 look _ = Just $ do (CS s) <- getStatus
                    let Just b :: Maybe Binder = cast s
-                   post (UI, NM $ show b)
+                   post (UI, NM $ "output " ++ show b)
                    return ()
 
 tokenize :: [String] -> [(String, String)]

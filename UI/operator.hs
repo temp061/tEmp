@@ -7,11 +7,14 @@ import Control.Concurrent.STM
 import Utility.Prim
 import System.IO
 
-opList ::[(String, (TChan String -> IO()))]
-opList = [ ("output", writeStd), ("error", writeErr) ] -- ("input", inputStd),etc ...
+opList :: [(String, (TChan String -> IO()))]
+opList = [ ("output", writeStd), ("error", writeErr), ("input", inputStd) ] -- ,etc ...
+
+msgPrptyList :: [(__KEY__, __DEST__)]
+msgPrptyList = [  ]
 
 operation :: Procedure
-operation = liftMT ( mapM fork opList ) >>= handle
+operation = {- liftMT (putStrLn "UI.Operator.") >> -} liftMT ( mapM fork opList ) >>= handle
   where
     fork :: (String, (TChan String -> IO ())) -> IO (String, (TChan String))
     fork (op,procedure) = do ch <- newTChanIO
@@ -24,11 +27,15 @@ writeHandle h s = forever $ atomically (readTChan s) >>= hPutStrLn h >> hFlush h
 writeStd :: TChan String -> IO ()
 writeStd = writeHandle stdout
 
+readHandle :: TChan String -> IO()
+readHandle ch = do s <- getContents
+                   atomically $ writeTChan ch s
+
 writeErr :: TChan String -> IO ()
 writeErr = writeHandle stderr
 
 handle :: [(String, TChan String)] -> ClientThread ()
-handle chList = do 
+handle chList = do
   normal <- fetch
   let (op, msg) = translate normal
   case lookup op chList of

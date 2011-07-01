@@ -8,12 +8,12 @@ module Main (main) where
 import qualified Data.Map as Map
 import Control.Concurrent
 import Utility.Prim
-import UI.CUI.Default
+import qualified UI.Operator as UI
 import MetaData.Types
-import MetaData.Operator
+import qualified MetaData.Operator as MetaData
 
 procedures :: [(Signature, Procedure, ClientState)] 
-procedures = [(UI, cuiProcedure, UnitState), (MetaData, operation, CS emptyBinder)]
+procedures = [(UI, UI.operation, UnitState), (MetaData, MetaData.operation, CS emptyBinder)]
 
 main :: IO ()
 main = runMT (threadManager procedures) () Map.empty
@@ -46,30 +46,3 @@ fork [] = return []
 fork ((sig, proc, initial):wps) = do tid <- forkMT initial proc
                                      ths <- fork wps
                                      return $ (sig, tid):ths
-
-{-
-dispatch :: DispatcherThead ()
-dispatch = do (sig, m) <- chRead dch
-              if check sig m
-              then return ()
-              else case Map.lookup sig chs of
-                     Nothing -> dispatch chs dch
-                     Just ch -> do chWrite ch m
-                                   dispatch chs dch
-    where
-      check sig (Message m) = sig == System && m == "exit"
-
-fork :: DispatcherChannel 
-     -> [(Signature, Procedure)]
-     -> IO ([ThreadId], [(Signature, RequestChannel)])
-fork dch procs = fork' [] [] procs
-    where
-      fork' :: [ThreadId] 
-            -> [(Signature, RequestChannel)] 
-            -> [(Signature, Procedure)] 
-            -> IO ([ThreadId], [(Signature, RequestChannel)]) 
-      fork' ths chs [] = return (ths, chs)
-      fork' ths chs ((sig, proc):procs) = do nch <- chNew
-                                             tid <- forkIO $ proc nch dch
-                                             fork' (tid:ths) ((sig, nch):chs) procs
--}
