@@ -21,12 +21,13 @@ operation = genOperation handle opList
 handle :: [(String, TChan String)] -> ClientThread ()
 handle chList = mapM_ p chList 
     where 
-      p (msg,ch) = do msg <- liftMT $ atomically $ readTChan ch
-                      mapM post' (filter (\(key, _) -> key == msg) destList)
-                      handle chList
-                          where
-                            post' :: (String, Signature) -> ClientThread ()
-                            post' (msg,sig) = post (sig, NM msg)
+      p (_,ch) = do cl <- liftMT $ atomically $ readTChan ch
+                    let w:ws = words cl
+                    mapM (post' cl) (filter (\(key, _) -> key == w) destList)
+                    handle chList
+                        where
+                            post' :: String -> (String, Signature) -> ClientThread ()
+                            post' cl (_,sig) = post (sig, NM cl)
 
 -- ************* --
 
