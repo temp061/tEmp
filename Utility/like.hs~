@@ -1,0 +1,7 @@
+module Utility.Like where
+
+class Like l a where
+      abst :: (Eq l) => a -> l
+
+like :: (Like l a, Like l b) => a -> b -> Bool
+like a b = abst a == abst b

@@ -2,7 +2,7 @@
 
 # OBJECT_PATH = ./obj
 
-objects = mainframe.hs MetaData/clip.hs MetaData/operator.hs MetaData/types.hs UI/operator.hs UI/inputOperator.hs UI/outputOperator.hs UI/CUI/types.hs Utility/message.hs Utility/mthread.hs Utility/prim.hs
+objects = mainframe.hs MetaData/clip.hs MetaData/operator.hs MetaData/types.hs UI/operator.hs UI/inputOperator.hs UI/outputOperator.hs UI/CUI/types.hs Utility/message.hs Utility/mthread.hs Utility/prim.hs Utility/like.hs
 
 program = temp
 

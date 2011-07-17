@@ -15,7 +15,7 @@ import Control.Applicative
 import Text.Parsec hiding (many, option, (<|>))
 
 opMap = Map.fromList [ (Add, handleOn add),
-                       -- (Remove, handleOn remove), 
+                       (Remove, handleOn remove), 
                        (Look, look)
                        -- (Search, handleOn search)
                      ]
@@ -59,7 +59,7 @@ tokenize (x:xs) = let (us, ms) = parse' x
     where
       -- ["uri1|md1,md2","uri2,uri3|md3,md4"]
       parse' :: String ->([String], [String])
-      parse' cs = case parse p "(decode message)" cs of
+      parse' cs = case parse p "(input toknizer)" cs of
                     Left err -> error $ show err
                     Right r -> r
       p {-parser-} = liftA2 (,) uris ((char '|') *> mds)

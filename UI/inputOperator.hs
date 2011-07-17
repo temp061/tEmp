@@ -13,7 +13,7 @@ opList :: [(String, (TChan String -> IO()))]
 opList = [ ("input", inputStd) ] -- ,etc ...
 
 destList :: [(String, Signature)] 
-destList = [ ("Add", MetaData), ("Look", MetaData) ]
+destList = [ ("Add", MetaData), ("Look", MetaData), ("Remove", MetaData) ]
 
 operation :: Procedure
 operation = genOperation handle opList
