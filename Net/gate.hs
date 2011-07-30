@@ -1,6 +1,7 @@
 module Net.Gate where
 
 import MetaData.Types
+import MetaData.Clip
 import Network.Socket
 import Control.Monad.State
 import qualified Data.Map as Map
@@ -16,7 +17,7 @@ type Gate = StateT GateState IO
 
 data GateState = GateState {
       channel   :: TChan GateMessage,
-      links     :: Map.Map Destination Handle,
+      links     :: Map.Map Destination (Handle, HandlePosn),
       blacklist :: [Destination]
     }
 
@@ -28,19 +29,26 @@ data GateMessage = GM {
 
 -- get :: Gate GateState
 push :: Clip -> Gate ()
-push c = do (GateState _ ls bl) <- get
-            mapM_ (putClip ls) $ filter (`notElem` bl) (Map.keys ls)
+push c = (\(GateState _ ls _) -> mapM_ (putClip ls) (Map.keys ls)) =<< get
     where
-      putClip ls d = lift $ hPutStrLn (fromJust $ Map.lookup d ls) (show c)
+      putClip ls d = lift $ hPutStrLn (fst $ (fromJust $ Map.lookup d ls)) (show c ++ "\x1a")
 
-pop :: Gate (Clip, Destination)
-pop = undefined
+pop :: Gate [(Clip, Destination)]
+pop = do st <- get
+         let ls = links st
+         mapM (popClip ls) (Map.keys ls)
+    where
+      popClip :: Map.Map Destination (Handle, HandlePosn) -> Destination -> Gate (Clip, Destination)
+      popClip ls d = lift $ do let (handle, before) = fromJust $ Map.lookup d ls
+                               posn <- hGetPosn handle
+                               cs <- if before /= posn then hGetContents handle else return ""
+                               return (restore cs, d)
 
 kick :: Destination -> Gate ()
-kick = undefined
+kick dest = modify $ \st -> st { links = Map.delete dest (links st) }     
 
 reject :: Destination -> Gate ()
-reject = undefined
+reject dest = modify (\st -> st { blacklist = dest:(blacklist st) }) >> kick dest
 
 host :: HostName
 host = "127.0.0.1"
@@ -61,9 +69,10 @@ gateInit = lift (withSocketsDo $ do
                    connect sock (addrAddress peeraddr)
                    h <- socketToHandle sock ReadWriteMode
                    hSetBuffering h (BlockBuffering Nothing) -- 実装依存だけど？
-                   return h
+                   posn <- hGetPosn h
+                   return (h, posn)
                 )
-           >>= (\h -> modify (\gs -> gs{links = Map.insert host h (links gs)}))
+           >>= (\(h, posn) -> modify (\gs -> gs{links = Map.insert host (h, posn) (links gs)}))
 
 runGate :: Gate a -> Profile -> TChan GateMessage -> IO a
 runGate act prof ch = evalStateT act $ loadProf prof ch
