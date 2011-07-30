@@ -6,7 +6,8 @@ module Utility.Prim (
                      ClientThread,
                      ClientState(..),
                      DispatcherThread,
-                     Procedure
+                     Procedure,
+                     Profile(..)
                     ) where
 
 import Utility.MThread
@@ -24,3 +25,5 @@ data ClientState = UnitState | forall s. (Typeable s) => CS s
 
 type DispatcherThread = MThread () (Map.Map Signature ThreadId)
 type Procedure = ClientThread ()
+
+newtype Profile = Profile String
