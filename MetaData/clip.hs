@@ -1,4 +1,4 @@
-module MetaData.Clip(add, remove, restore)  where
+module MetaData.Clip(add, remove)  where
 
 import Data.Time.Clock
 import Control.Concurrent.STM
@@ -22,6 +22,3 @@ remove b c = b{clips = filter without (clips b)}
              where
                without :: Clip -> Bool
                without clip = not $ c `like` clip
-
-restore :: String -> Clip
-restore s = undefined

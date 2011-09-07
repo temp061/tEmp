@@ -42,7 +42,7 @@ pop = do st <- get
       popClip ls d = lift $ do let (handle, before) = fromJust $ Map.lookup d ls
                                posn <- hGetPosn handle
                                cs <- if before /= posn then hGetContents handle else return ""
-                               return (restore cs, d)
+                               return (read cs, d)
 
 kick :: Destination -> Gate ()
 kick dest = modify $ \st -> st { links = Map.delete dest (links st) }     

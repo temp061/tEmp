@@ -27,7 +27,7 @@ handle :: NormalMessage -> ClientThread ()
 handle m  = let (op, args) = translate m
             in case Map.lookup op opMap >>= \handler -> handler args of
                  Just ct -> ct --operation --handler -> handler args
-                 Nothing -> post (UIOut, NM "error Operation error")
+                 Nothing -> post (UIOut, NM "error MetaData.Operation error")
                >> operation
 
 handleOn :: (Binder -> Clip -> Binder) -> [String] -> Maybe (ClientThread ())

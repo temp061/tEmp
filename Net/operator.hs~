@@ -1,0 +1,24 @@
+module Net.Operator (operation) where
+
+{-
+*** operation ***
+push   -- from AI
+kick   -- from AI
+reject -- from UI
+-}
+
+opMap = Map.fromList [(Push, push), (Kick, kick), (Reject, reject)]
+
+operation :: Procedure
+operation = fetch >>= handle
+
+handle :: NormalMessage -> CliantThread ()
+handle m = let (op, args) = translate m
+           in case Map.lookup op opMap >>= \handler -> handler args of
+                Just ct -> ct
+                Nothing -> post (UIOut, NM "error Net.Operation error")
+              >> operation
+
+p :: (a -> Gate()) -> [String] -> ClientThread ()
+p func arg = gateToClient $ func (trans $ arg) 
+trans :: [String] -> a
