@@ -15,21 +15,19 @@ type Destination = String
 
 type Gate = StateT GateState IO
 
-data GateState = GateState {
-      channel   :: TChan GateMessage,
-      links     :: Map.Map Destination (Handle, HandlePosn),
-      blacklist :: [Destination]
-    }
+type SendHandle = (Handle, HandlePosn)
+type RecvHandle = SendHandle
 
-data GateMessage = GM {
-      order :: String,
-      clip  :: Clip,
-      dest  :: Destination
-}
+data GateState = GateState {
+      sendQ     :: TChan Clip,
+      recvQ     :: TChan (Clip, Destination),
+      links     :: TVar Map.Map Destination (SendHandle, RecvHandle),
+      blacklist :: TVar [Destination]
+    }
 
 -- get :: Gate GateState
 push :: Clip -> Gate ()
-push c = (\(GateState _ ls _) -> mapM_ (putClip ls) (Map.keys ls)) =<< get
+push c = (\(GateState _ _ ls _) -> mapM_ (putClip ls) (Map.keys ls)) =<< get
     where
       putClip ls d = lift $ hPutStrLn (fst $ (fromJust $ Map.lookup d ls)) (show c ++ "\x1a")
 
@@ -48,7 +46,7 @@ kick :: Destination -> Gate ()
 kick dest = modify $ \st -> st { links = Map.delete dest (links st) }     
 
 reject :: Destination -> Gate ()
-reject dest = modify (\st -> st { blacklist = dest:(blacklist st) }) >> kick dest
+reject dest = get >>= (\GateState _ _ _ bl -> lift ((readTVarIO bl) >>= (\list -> writeTVarIO dest:result))) >> kick dest
 
 host :: HostName
 host = "127.0.0.1"
@@ -56,26 +54,31 @@ host = "127.0.0.1"
 port :: ServiceName
 port = "2011"
 
-forkGate :: Gate () -> Profile -> IO (TChan GateMessage)
-forkGate proc prof = do ch <- newTChanIO 
-                        forkIO $ runGate (gateInit >> proc) prof ch
-                        return ch
+forkGate :: Profile -> Gate ()
+forkGate prof = lift do sch <- newTChanIO
+                        ssock <- socketInit
+                        forkIO $ sendProc sch ssock
+                        rch <- newTChanIO
+                        rsock <- socketInit
+                        forkIO $ recvProc rch rsock bl
+                        tl <- newTVarIO (Map.singleton host (ssock, rsock))
+                        tb <- newTVarIO (loadProf prof)
+                        return GateState sch rch tl tb
+                >>= put 
 
-gateInit :: Gate ()
-gateInit = lift (withSocketsDo $ do
-                   (peeraddr:_) <- getAddrInfo Nothing (Just host) (Just port)
-                   sock <- socket (addrFamily peeraddr) Stream defaultProtocol
-                   setSocketOption sock KeepAlive 1
-                   connect sock (addrAddress peeraddr)
-                   h <- socketToHandle sock ReadWriteMode
-                   hSetBuffering h (BlockBuffering Nothing) -- 実装依存だけど？
-                   posn <- hGetPosn h
-                   return (h, posn)
-                )
-           >>= (\(h, posn) -> modify (\gs -> gs{links = Map.insert host (h, posn) (links gs)}))
-
+socketInit :: IO (Handle, HandlePosn)
+socketInit = withSocketsDo $ do
+               (peeraddr:_) <- getAddrInfo Nothing proc(Just host) (Just port)
+               sock <- socket (addrFamily peeraddr) Stream defaultProtocol
+               setSocketOption sock KeepAlive 1
+               connect sock (addrAddress peeraddr)
+               h <- socketToHandle sock ReadWriteMode
+               hSetBuffering h (BlockBuffering Nothing) -- 実装依存だけど？
+               posn <- hGetPosn h
+               return (h, posn)
+                
 runGate :: Gate a -> Profile -> TChan GateMessage -> IO a
 runGate act prof ch = evalStateT act $ loadProf prof ch
 
-loadProf :: Profile -> TChan GateMessage -> GateState
-loadProf prof ch = GateState ch Map.empty []
+loadProf :: Profile -> [Destination]
+loadProf prof = []
