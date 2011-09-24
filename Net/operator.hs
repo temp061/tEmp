@@ -1,33 +1,31 @@
 module Net.Operator (operation) where
 
-{-
-*** operation ***
-push   -- from AI
-kick   -- from AI
-reject -- from UI
--}
+import Control.Concurrent
+import Control.Monad.Trans
 
-opMap = Map.fromList [(Push, push), (Kick, kick), (Reject, reject)]
+import Utility.Prim
+import Utility.Message
+import Net.Gate
+import MetaData.Types
+
+defaultWaitMicroSecond = 1000000
 
 operation :: Procedure
-operation = do ch <- lift $ forkGate procedure []
-               handle ch
+operation = land >> release >> (lift $ threadDelay defaultWaitMicroSecond) >> operation
 
-procedure :: Gate ()
-procedure = forever do (GateState ch _ _) <- get
-                       isEmpty <- lift $ atomically $ isEmptyTChan ch
-                       if isEmpty
-                       then
-                           clipDestList <- pop
-                           lift $ atomically $ mapM_ (\(c,d) -> writeTChan ch $ GM "NewClip" c d ) clipDestList
-                       else
-                           gm <- lift $ atomically $ readTChan ch
-                           case order gm of
-                             "Push"   -> push   $ clip gm 
-                             "Kick"   -> kick   $ dest gm
-                             "Reject" -> reject $ dest gm
+-- lift $ runGate procedure
+land :: ClientThread ()
+land = (lift $ runGate $ landLoop []) >>= \rs -> post (AI, NM $ show rs) >> post (UIOut, NM $ "output " ++ show rs)
+    where
+      landLoop :: [(Clip,Destination)] -> Gate [(Clip,Destination)]
+      landLoop cs = pop >>= \recv -> case recv of
+                                       Just cd -> landLoop (cd:cs)
+                                       Nothing -> return cs
 
-handle :: TChan GateMessage -> CliantThread ()
-handle ch = fetch >>= handleOn ch >> handle ch
-
-handleOn ch msg = 
+release :: ClientThread ()
+release = gather [] >>= \cs -> lift $ runGate $ mapM_ push cs 
+    where
+      gather :: [Clip] -> ClientThread [Clip]
+      gather cs = tryFetch >>= \req -> case req of
+                                         Just (NM c) -> gather ((read c):cs) 
+                                         Nothing     -> return cs  -- "End of the Loop"

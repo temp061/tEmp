@@ -8,7 +8,7 @@ module Utility.MThread (ThreadMessage(..),
                       forkMT, runMT, liftMT,
                       getShared, setShared, modifyShared,
                       getStatus, setStatus, modifyStatus,
-                      fetch, post, require, 
+                      fetch, tryFetch, post, require, 
                       killMThread
                      ) where
 
@@ -21,6 +21,12 @@ import Control.Concurrent.STM
 class ThreadMessage msg tm where
     code   :: tm  -> msg
     decode :: msg -> tm
+
+instance (ThreadMessage msg tm) => ThreadMessage (Maybe msg) (Maybe tm) where
+    code (Just tm) = Just $ code tm
+    code Nothing = Nothing
+    decode (Just msg) = Just $ decode msg
+    decode Nothing = Nothing
 
 data ThreadState msg sh st = 
     TS {
@@ -88,6 +94,14 @@ modifyStatus f = modify $ \ts -> ts {status = f $ status ts}
 
 fetch :: (ThreadMessage msg tm) => GenMThread msg sh st tm
 fetch = (accessSTM $ readTChan.channel) >>= return.decode
+
+tryFetch :: (ThreadMessage msg tm) => GenMThread msg sh st (Maybe tm)
+tryFetch = (accessSTM $ extract.channel) >>= return.decode
+    where
+      extract ch = isEmptyTChan ch >>= \emp -> 
+                   if emp 
+                   then return Nothing 
+                   else readTChan ch >>= return.Just
 
 post :: (Show msg, ThreadMessage msg om) => om -> GenMThread msg sh st () 
 post om = let m = code om

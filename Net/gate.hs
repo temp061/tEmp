@@ -1,4 +1,4 @@
-module Net.Gate (push, pop, kick, reject, forkGate) where
+module Net.Gate (Gate, push, pop, kick, reject, runGate, Destination) where
 
 import MetaData.Types
 import MetaData.Clip
@@ -27,20 +27,15 @@ data GateState = GateState {
 
 -- get :: Gate GateState
 push :: Clip -> Gate ()
-push c = get >>= \gs -> lift $ writeTChanIO (sendQ gs) c
+push c = get >>= \gs -> lift $ atomically $ writeTChan (sendQ gs) c
 
-pop :: Gate [(Clip, Destination)]
-pop = mapClip mapM popClip
-    where
-      popClip :: Map.Map Destination (SendHandle, RecvHandle) -> Destination -> IO (Clip, Destination)
-      popClip ls d = do let (_ , (handle, before)) = fromJust $ Map.lookup d ls
-                        posn <- hGetPosn handle
-                        cs <- if before /= posn then hGetContents handle else return ""
-                        return (read cs, d)
-
-mapClip cmap func = get >>= (\(GateState _ _ ls _) -> lift ( readTVarIO ls >>= (\m -> 
-                                                                           cmap (func m) (Map.keys m))
-                                                      ))
+pop :: Gate (Maybe (Clip, Destination))
+pop = get >>= \gs -> let rq = recvQ gs in 
+                     lift $ atomically $ 
+                          isEmptyTChan rq >>= \emp ->
+                              if emp
+                              then return Nothing 
+                              else readTChan rq >>= return.Just
 
 kick :: Destination -> Gate ()
 kick dest = get >>= (\(GateState _ _ ls _) ->  
@@ -64,19 +59,17 @@ host = "127.0.0.1"
 port :: ServiceName
 port = "2011"
 
-forkGate :: Profile -> Gate ()
-forkGate prof = lift (do (ssock, _) <- socketInit
-                         rsock <- socketInit
-                         let bl = loadProf prof
-                         tl <- newTVarIO (Map.singleton host (ssock, rsock))
-                         tb <- newTVarIO bl
-                         sch <- newTChanIO
-                         forkIO $ sendProc sch tl
-                         rch <- newTChanIO
-                         forkIO $ recvProc rch tl tb
-                         return $ GateState sch rch tl tb
-                     )
-                >>= put 
+runGate :: Gate a -> IO a
+runGate act = do (ssock, _) <- socketInit
+                 rsock <- socketInit
+                 let bl = loadProf
+                 tl <- newTVarIO (Map.singleton host (ssock, rsock))
+                 tb <- newTVarIO bl
+                 sch <- newTChanIO
+                 forkIO $ sendProc sch tl
+                 rch <- newTChanIO
+                 forkIO $ recvProc rch tl tb
+                 evalStateT act $ GateState sch rch tl tb
 
 socketInit :: IO (Handle, HandlePosn)
 socketInit = withSocketsDo $ do
@@ -88,18 +81,27 @@ socketInit = withSocketsDo $ do
                hSetBuffering h (BlockBuffering Nothing) -- 実装依存だけど？
                posn <- hGetPosn h
                return (h, posn)
-{-
-runGate :: Gate a -> Profile -> TChan GateMessage -> IO a
-runGate act prof ch = evalStateT act $ loadProf prof ch
--}
-loadProf :: Profile -> [Destination]
-loadProf prof = []
+
+loadProf :: [Destination]
+loadProf = []
 
 sendProc :: TChan Clip -> TVar (Map.Map Destination (SendHandle, RecvHandle)) -> IO ()
-sendProc ch tls = readTChan ch >>= \c -> mapClip tls mapM_ (\ld -> hPutStrLn (fst $ (fromJust $ Map.lookup d ls)) (show c ++ "\x1a"))
+sendProc ch tls = atomically (readTChan ch) >>= \c -> 
+                  mapClip tls mapM_ (\ls d -> hPutStrLn (fst $ (fromJust $ Map.lookup d ls)) (show c ++ "\x1a"))
 
-recvProc :: TChan Clip -> TVar (Map.Map Destination (SendHandle, RecvHandle)) -> TVar [Destination] -> IO ()
-recvProc ch tls tbl = undefined
-
-mapClip ls cmap func = readTVarIO ls >>= (\m -> cmap (func m) (Map.keys m))
-
+recvProc :: TChan (Clip,Destination) -> TVar (Map.Map Destination (SendHandle, RecvHandle)) -> TVar [Destination] -> IO ()
+recvProc ch tls tbl = mapClip tls mapM popClip >>= \cds -> mapM_ (atomically.(writeTChan ch)) (catMaybes cds)
+    where
+      popClip :: Map.Map Destination (SendHandle, RecvHandle) -> Destination -> IO (Maybe (Clip, Destination))
+      popClip ls d = do let (_ , (handle, before)) = fromJust $ Map.lookup d ls
+                        posn <- hGetPosn handle
+                        if before /= posn 
+                        then hGetContents handle >>= (\cs -> return $ Just (read cs, d))
+                        else return Nothing
+{-
+mapClip :: TVar (Map.Map Destination (SendHandle, RecvHandle))
+        -> ((Destination -> IO a) -> [Destination] -> IO b)
+        -> (Map.Map Destination (SendHandle, RecvHandle) -> Destination -> IO a)
+        -> IO b
+-}
+mapClip ls mapper func = readTVarIO ls >>= (\m -> mapper (func m) (Map.keys m))
