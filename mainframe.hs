@@ -12,9 +12,10 @@ import qualified UI.InputOperator as UIIn
 import qualified UI.OutputOperator as UIOut
 import MetaData.Types
 import qualified MetaData.Operator as MetaData
+import qualified Net.Operator as Net
 
 procedures :: [(Signature, Procedure, ClientState)] 
-procedures = [(UIIn, UIIn.operation, UnitState), (UIOut, UIOut.operation, UnitState), (MetaData, MetaData.operation, CS emptyBinder)]
+procedures = [(UIIn, UIIn.operation, UnitState), (UIOut, UIOut.operation, UnitState), (MetaData, MetaData.operation, CS emptyBinder), (Net, Net.operation, UnitState)]
 
 main :: IO ()
 main = runMT (threadManager procedures) () Map.empty

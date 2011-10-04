@@ -11,19 +11,22 @@ import MetaData.Types
 defaultWaitMicroSecond = 1000000
 
 operation :: Procedure
-operation = land >> release >> (lift $ threadDelay defaultWaitMicroSecond) >> operation
+operation = lift initialState >>= operation'
+    where
+      operation' :: GateState -> Procedure
+      operation' is = land is >>= release >>= \gs -> (lift $ threadDelay defaultWaitMicroSecond) >> operation' gs
 
 -- lift $ runGate procedure
-land :: ClientThread ()
-land = (lift $ runGate $ landLoop []) >>= \rs -> post (AI, NM $ show rs) >> post (UIOut, NM $ "output " ++ show rs)
+land :: GateState -> ClientThread GateState
+land gs = (lift $ runGate (land' []) gs) >>= \(rs, ngs) -> post (AI, NM $ show rs) >> post (UIOut, NM $ "output " ++ show rs) >> return ngs
     where
-      landLoop :: [(Clip,Destination)] -> Gate [(Clip,Destination)]
-      landLoop cs = pop >>= \recv -> case recv of
-                                       Just cd -> landLoop (cd:cs)
-                                       Nothing -> return cs
+      land' :: [(Clip,Destination)] -> Gate [(Clip,Destination)]
+      land' cs = pop >>= \recv -> case recv of
+                                    Just cd -> land' (cd:cs)
+                                    Nothing -> return cs
 
-release :: ClientThread ()
-release = gather [] >>= \cs -> lift $ runGate $ mapM_ push cs 
+release :: GateState -> ClientThread GateState
+release gs = gather [] >>= \cs -> lift $ runGate (mapM_ push cs) gs >>= \(_, ngs) -> return ngs 
     where
       gather :: [Clip] -> ClientThread [Clip]
       gather cs = tryFetch >>= \req -> case req of

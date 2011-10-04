@@ -1,4 +1,4 @@
-module Net.Gate (Gate, push, pop, kick, reject, runGate, Destination) where
+module Net.Gate (Gate, push, pop, kick, reject, initialState, runGate, Destination, GateState) where
 
 import MetaData.Types
 import MetaData.Clip
@@ -25,7 +25,6 @@ data GateState = GateState {
       blacklist :: TVar [Destination]
     }
 
--- get :: Gate GateState
 push :: Clip -> Gate ()
 push c = get >>= \gs -> lift $ atomically $ writeTChan (sendQ gs) c
 
@@ -56,31 +55,50 @@ updateTVar source func = readTVarIO source >>= \target -> atomically $ writeTVar
 host :: HostName
 host = "127.0.0.1"
 
-port :: ServiceName
-port = "2011"
+servicePort :: ServiceName
+servicePort = "2011"
 
-runGate :: Gate a -> IO a
-runGate act = do (ssock, _) <- socketInit
-                 rsock <- socketInit
-                 let bl = loadProf
-                 tl <- newTVarIO (Map.singleton host (ssock, rsock))
-                 tb <- newTVarIO bl
-                 sch <- newTChanIO
-                 forkIO $ sendProc sch tl
-                 rch <- newTChanIO
-                 forkIO $ recvProc rch tl tb
-                 evalStateT act $ GateState sch rch tl tb
+connectPort = ServiceName
+connectPort = "4022"
 
-socketInit :: IO (Handle, HandlePosn)
+
+initialState :: IO GateState
+initialState = do (ssock, _) <- socketInit
+                  rsock <- socketInit
+                  let bl = loadProf
+                  tl <- newTVarIO (Map.singleton host (ssock, rsock))
+                  tb <- newTVarIO bl
+                  sch <- newTChanIO
+                  forkIO $ sendProc sch tl
+                  rch <- newTChanIO
+                  forkIO $ recvProc rch tl tb
+                  return $ GateState sch rch tl tb 
+
+runGate :: Gate a -> GateState -> IO (a, GateState)
+runGate act gs = runStateT act gs
+
+socketInit :: IO Socket
 socketInit = withSocketsDo $ do
                (peeraddr:_) <- getAddrInfo Nothing (Just host) (Just port)
                sock <- socket (addrFamily peeraddr) Stream defaultProtocol
                setSocketOption sock KeepAlive 1
+
+sendSocket :: IO Handle
+sendSocket = socketInit >>= \sock -> withSocketsDo $ do
                connect sock (addrAddress peeraddr)
                h <- socketToHandle sock ReadWriteMode
                hSetBuffering h (BlockBuffering Nothing) -- 実装依存だけど？
-               posn <- hGetPosn h
-               return (h, posn)
+               return h
+
+recvSocket :: IO (Handle, HandlePosn)
+recvSocket = withSocketsDo $ do
+               (peeraddr:_) <- getAddrInfo (Just (defaultHints {addrFlags = [AI_PASSIVE]})) Nothing (Just servicePort)
+               sock <- socket (addrFamily peeraddr) Stream defaultProtocol
+               bindSocket sock $ addrAddress peeraddr
+               listen sock 5 -- 5は接続待ちキューの長さ。最大はシステム依存(通常5)
+               -- アクセス待ちループを記述
+               -- (conn, addr) <- accept sock
+               
 
 loadProf :: [Destination]
 loadProf = []
@@ -90,14 +108,16 @@ sendProc ch tls = atomically (readTChan ch) >>= \c ->
                   mapClip tls mapM_ (\ls d -> hPutStrLn (fst $ (fromJust $ Map.lookup d ls)) (show c ++ "\x1a"))
 
 recvProc :: TChan (Clip,Destination) -> TVar (Map.Map Destination (SendHandle, RecvHandle)) -> TVar [Destination] -> IO ()
-recvProc ch tls tbl = mapClip tls mapM popClip >>= \cds -> mapM_ (atomically.(writeTChan ch)) (catMaybes cds)
+recvProc ch tls tbl = readTVarIO tbl >>= \bl -> mapClip tls mapM (popClip bl) >>= \cds -> mapM_ (atomically.(writeTChan ch)) (catMaybes cds)
     where
-      popClip :: Map.Map Destination (SendHandle, RecvHandle) -> Destination -> IO (Maybe (Clip, Destination))
-      popClip ls d = do let (_ , (handle, before)) = fromJust $ Map.lookup d ls
-                        posn <- hGetPosn handle
-                        if before /= posn 
-                        then hGetContents handle >>= (\cs -> return $ Just (read cs, d))
-                        else return Nothing
+      popClip :: [Destination] -> Map.Map Destination (SendHandle, RecvHandle) -> Destination -> IO (Maybe (Clip, Destination))
+      popClip bl ls d 
+          | d `elem` bl = return Nothing
+          | otherwise   = do let (_ , (handle, before)) = fromJust $ Map.lookup d ls
+                             posn <- hGetPosn handle
+                             if before /= posn 
+                             then hGetContents handle >>= (\cs -> return $ Just (read cs, d))
+                             else return Nothing
 {-
 mapClip :: TVar (Map.Map Destination (SendHandle, RecvHandle))
         -> ((Destination -> IO a) -> [Destination] -> IO b)

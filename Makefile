@@ -2,14 +2,18 @@
 
 # OBJECT_PATH = ./obj
 
-objects = mainframe.hs MetaData/clip.hs MetaData/operator.hs MetaData/types.hs UI/operator.hs UI/inputOperator.hs UI/outputOperator.hs UI/CUI/types.hs Utility/message.hs Utility/mthread.hs Utility/prim.hs Utility/like.hs Net/gate.hs Net/operator.hs
+SOURCES = mainframe.hs MetaData/clip.hs MetaData/operator.hs MetaData/types.hs UI/operator.hs UI/inputOperator.hs UI/outputOperator.hs UI/CUI/types.hs Utility/message.hs Utility/mthread.hs Utility/prim.hs Utility/like.hs Net/gate.hs Net/operator.hs
 
-program = temp
+his = $(SOURCES:%.hs=%.hi)
+
+objs = $(SOURCES:%.hs=%.o)
+
+program = tEmp
 
 # option = -g
 
-$(program): $(objects)
-	ghc -o $(program) $(objects)
+$(program): $(SOURCES)
+	ghc -o $(program) $(SOURCES)
 
 .SUFFIXES: .hs .o
 
@@ -18,4 +22,4 @@ $(program): $(objects)
 
 .PHONY : clean
 clean :
-	-rm $(program)
+	-rm -r $(program) $(his) $(objs)
