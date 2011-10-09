@@ -90,12 +90,25 @@ sendSocket = socketInit >>= \sock -> withSocketsDo $ do
                hSetBuffering h (BlockBuffering Nothing) -- 実装依存だけど？
                return h
 
-recvSocket :: IO (Handle, HandlePosn)
-recvSocket = withSocketsDo $ do
-               (peeraddr:_) <- getAddrInfo (Just (defaultHints {addrFlags = [AI_PASSIVE]})) Nothing (Just servicePort)
-               sock <- socket (addrFamily peeraddr) Stream defaultProtocol
-               bindSocket sock $ addrAddress peeraddr
-               listen sock 5 -- 5は接続待ちキューの長さ。最大はシステム依存(通常5)
+postSocket :: TVar [Destination] -> IO ()
+postSocket tls = withSocketsDo $ do
+                     (postinfo:_) <- getAddrInfo (Just (defaultHints {addrFlags = [AI_PASSIVE]})) Nothing (Just servicePort)
+                     sock <- socket (addrFamily postinfo) Stream defaultProtocol
+                     bindSocket sock $ addrAddress postinfo
+                     listen sock 5 -- 5は接続待ちキューの長さ。最大はシステム依存(通常5)
+                     standby
+                         where
+                           standby :: IO ()
+                           standby = accept sock >>= \(s, a) -> 
+                                     let dest = namingDest a 
+                                     in entry dest >> forkIO (receiver s a dest links) 
+                                     >> standby
+                           entry :: Destination -> IO ()
+                           entry dest = readTVarIO tls >>= \ls -> 
+                                        atomically.writeTVarIO $ if dest `elem` ls then dest:ls else ls
+                           namingDest :: SockAddr -> Destination
+                           namingDest addr = show addr
+                                  
                -- アクセス待ちループを記述
                -- (conn, addr) <- accept sock
                
@@ -106,6 +119,9 @@ loadProf = []
 sendProc :: TChan Clip -> TVar (Map.Map Destination (SendHandle, RecvHandle)) -> IO ()
 sendProc ch tls = atomically (readTChan ch) >>= \c -> 
                   mapClip tls mapM_ (\ls d -> hPutStrLn (fst $ (fromJust $ Map.lookup d ls)) (show c ++ "\x1a"))
+
+recvThread :: IO () 
+recvThread = 
 
 recvProc :: TChan (Clip,Destination) -> TVar (Map.Map Destination (SendHandle, RecvHandle)) -> TVar [Destination] -> IO ()
 recvProc ch tls tbl = readTVarIO tbl >>= \bl -> mapClip tls mapM (popClip bl) >>= \cds -> mapM_ (atomically.(writeTChan ch)) (catMaybes cds)
