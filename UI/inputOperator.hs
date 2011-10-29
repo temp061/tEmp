@@ -1,4 +1,4 @@
-module UI.InputOperator (operation) where
+module UI.InputOperator (operation, features) where
 
 import Control.Monad
 import Control.Concurrent
@@ -9,11 +9,19 @@ import System.IO
 
 import UI.Operator
 
+import qualified AI.Operator as AI
+import qualified Net.Operator as Net
+-- import qualified UI.InputOperator as UIIn
+import qualified UI.OutputOperator as UIOut
+import qualified MetaData.Operator as MetaData
+
 opList :: [(String, (TChan String -> IO()))]
 opList = [ ("input", inputStd) ] -- ,etc ...
 
-destList :: [(String, Signature)] 
-destList = [ ("Add", MetaData), ("Look", MetaData), ("Remove", MetaData) ]
+features :: [(String, Signature)] 
+features = []
+
+allFeature = features {- ++ AI.features -} ++ Net.features ++ UIOut.features ++ MetaData.features
 
 operation :: Procedure
 operation = genOperation handle opList
@@ -23,7 +31,7 @@ handle chList = mapM_ p chList
     where 
       p (_,ch) = do cl <- liftMT $ atomically $ readTChan ch
                     let w:ws = words cl
-                    mapM (post' cl) (filter (\(key, _) -> key == w) destList)
+                    mapM (post' cl) (filter (\(key, _) -> key == w) allFeature)
                     handle chList
                         where
                             post' :: String -> (String, Signature) -> ClientThread ()

@@ -5,18 +5,25 @@ import MetaData.Clip
 import Network.Socket
 import Control.Monad.State
 import System.IO
-import Data.Maybe
+import Data.List
 import Utility.Prim
 import Control.Concurrent.STM
 import Control.Concurrent
 
+import Numeric
+import Data.Char
+import Text.Parsec hiding (many)
+import Control.Applicative
+
+
 type Destination = String
 
 namingDest :: SockAddr -> Destination
-namingDest addr = show addr
+namingDest (SockAddrInet (PortNum port) ip) = unwords [show ip, show port]
 
 resolveAddr :: Destination -> SockAddr
-resolveAddr dest = read dest
+resolveAddr dest = let [ip, port] = words dest
+                   in SockAddrInet (PortNum $ read port) (read ip)
 
 type Gate = StateT GateState IO
 
@@ -24,49 +31,40 @@ type SendHandle = Handle
 type RecvHandle = (Handle, HandlePosn)
 
 data GateState = GateState {
-      sendQ     :: TChan Clip,
-      postId    :: ThreadId
-      pool      :: TVar [(Clip, Destination)],
-      links     :: TVar [Destination],
-      blacklist :: TVar [Destination]
+      sendQ         :: TChan Clip,
+      postId        :: ThreadId,
+      receivedPool  :: TVar [(Clip, Destination)],
+      links         :: TVar [Destination],
+      blacklist     :: TVar [Destination]
     }
 
 push :: Clip -> Gate ()
 push c = get >>= \gs -> lift $ atomically $ writeTChan (sendQ gs) c
 
-pop :: Gate (Maybe (Clip, Destination))
-pop = get >>= \gs -> let rq = recvQ gs in 
-                     lift $ atomically $ 
-                          isEmptyTChan rq >>= \emp ->
-                              if emp
-                              then return Nothing 
-                              else readTChan rq >>= return.Just
+pop :: Gate [(Clip, Destination)]
+pop = get >>= \gs -> lift $ readTVarIO $ receivedPool gs
 
 kick :: Destination -> Gate ()
-kick dest = get >>= (\(GateState _ _ ls _) ->  
-                     lift (
-                           updateTVar ls (Map.delete dest)
-                          ))     
+kick   dest = adjust links delete dest
 
-reject :: Destination -> Gate ()
-reject dest = get >>= (\(GateState _ _ _ bl) -> 
-                       lift (
-                              updateTVar bl (dest:)
-                            )) >> 
-              kick dest
+reject :: Destination -> Gate()
+reject dest = adjust blacklist (:) dest >> kick dest
 
-updateTVar :: TVar a -> (a -> a) -> IO ()
-updateTVar source func = readTVarIO source >>= \target -> atomically $ writeTVar source (func target)
+adjust ::  (GateState -> TVar [Destination]) -> (Destination -> [Destination] -> [Destination]) -> Destination -> Gate ()
+adjust target instruction dest = get >>= \gs -> lift $ updateTVarIO (target gs) (instruction dest)
+
+updateTVarIO :: TVar a -> (a -> a) -> IO ()
+updateTVarIO source func = readTVarIO source >>= \target -> atomically $ writeTVar source (func target)
 
 host :: Destination
-host = namingDest $ SockAddrInet (read servicePort) 0x7F000001 -- 0x7F000001 === 127.0.0.1
+host = namingDest $ SockAddrInet (PortNum $ read servicePort) 0x0100007F -- 0x0100007F === 127.0.0.1
 
 servicePort :: ServiceName
-servicePort = "2011"
+servicePort = "2011" -- ポート2011の意味
 
 {-
 connectPort = ServiceName
-connectPort = "4022"
+connectPort = "0xb60f" -- 4022
 -}
 
 initialState :: IO GateState
@@ -74,7 +72,7 @@ initialState = do let bl = loadProf
                   tls <- newTVarIO [host]
                   tbl <- newTVarIO bl
                   sch <- newTChanIO
-                  pool <- newTVarIO
+                  pool <- newTVarIO []
                   ptid <- forkIO $ postProc pool tls tbl
                   forkIO $ sendProc sch tls
                   return $ GateState sch ptid pool tls tbl 
@@ -88,18 +86,18 @@ postProc pool tls tbl = withSocketsDo $ do
                           sock <- socket (addrFamily postinfo) Stream defaultProtocol
                           bindSocket sock $ addrAddress postinfo
                           listen sock 5 -- 5は接続待ちキューの長さ。最大はシステム依存(通常5)
-                          standby
+                          standby sock
     where
-      standby :: IO ()
-      standby = accept sock >>= \(sock, addr) -> 
-                let dest = namingDest addr
-                in readTVarIO tbl >>= \bl -> if dest `notElem` bl
-                                             then entry dest >> forkIO (receiver sock pool dest tls)
-                                             else return () -- else case : "a menber of the black list(bl)" 
-                >> standby
+      standby :: Socket -> IO ()
+      standby parent = accept parent >>= \(sock, addr) -> 
+                       readTVarIO tbl >>= \bl -> let dest = namingDest addr
+                                                 in if dest `notElem` bl
+                                                    then entry dest >> forkIO (receiver sock pool dest tls) >> return ()
+                                                    else return () -- else case : "a menber of the black list(bl)" 
+                       >> standby parent
       entry :: Destination -> IO ()
       entry dest = readTVarIO tls >>= \ls -> 
-                   atomically.writeTVarIO $ if dest `elem` ls then dest:ls else ls
+                   atomically.writeTVar tls $ if dest `elem` ls then dest:ls else ls
 
 receiver :: Socket -> TVar [(Clip, Destination)] -> Destination -> TVar [Destination] -> IO () 
 receiver sock pool dest tls = do hdl <- socketToHandle sock ReadMode
@@ -108,7 +106,9 @@ receiver sock pool dest tls = do hdl <- socketToHandle sock ReadMode
                                  receiver' $ lines msg
     where
       receiver' [] = return ()
-      receiver' (r:rs) = readTVarIO tls >>= \ls -> if dest `elem` ls then atomically.writeTVar pool (read r) >> receiver' rs else return ()
+      receiver' (r:rs) = readTVarIO tls >>= \ls -> if dest `elem` ls
+                                                   then (atomically $ readTVar pool >>= \p -> writeTVar pool (((read r), dest):p)) >> receiver' rs 
+                                                   else return ()
                                   
 loadProf :: [Destination]
 loadProf = []
@@ -128,6 +128,7 @@ sendSocket dest = withSocketsDo $ do
                     hSetBuffering h LineBuffering
                     return h
 
+-- linkToHandle:[複数to複数]対応なのでちょっと気に入らない
 sendProc :: TChan Clip -> TVar [Destination] -> IO ()
 sendProc ch tls = atomically (readTChan ch) >>= \clip -> 
                   searchLink tls >> linkToHandle tls >>= mapM_ (flip hPutStrLn $ show clip)

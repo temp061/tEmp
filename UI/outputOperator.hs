@@ -1,4 +1,4 @@
-module UI.OutputOperator (operation) where
+module UI.OutputOperator (operation, features) where
 
 import Control.Monad
 import Control.Concurrent
@@ -11,6 +11,9 @@ import UI.Operator
 
 opList :: [(String, (TChan String -> IO()))]
 opList = [ ("output", writeStd), ("error", writeErr) ] -- ,etc ...
+
+features :: [(String, Signature)] 
+features = []
 
 operation :: Procedure
 operation = genOperation handle opList

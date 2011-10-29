@@ -1,6 +1,6 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ScopedTypeVariables, TupleSections #-}
 
-module MetaData.Operator (operation) where
+module MetaData.Operator (operation, features) where
 
 import Data.Typeable
 import qualified Data.Map as Map
@@ -19,6 +19,12 @@ opMap = Map.fromList [ (Add, handleOn add),
                        (Look, look)
                        -- (Search, handleOn search)
                      ]
+
+features :: [(String, Signature)]
+features = map (,MetaData) supports
+
+supports :: [String]
+supports = ["Add", "Look", "Remove"]
 
 operation :: Procedure
 operation = {- liftMT (putStrLn "MetaData.Operator.") >> -} fetch >>= handle
