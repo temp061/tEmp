@@ -29,7 +29,7 @@ land :: GateState -> ClientThread GateState
 land gs = (lift $ runGate (land' []) gs) >>= \(rs, ngs) -> post (AI, NM $ "Add " ++ show rs) >> post (UIOut, NM $ "output " ++ show rs) >> return ngs
     where
       land' :: [(Clip,Destination)] -> Gate [(Clip,Destination)]
-      land' cs = pop >>= \recv -> land' $ recv ++ cs
+      land' cs = pop >>= \recv -> if recv == [] then return [] else land' $ recv ++ cs
 
 release :: GateState -> ClientThread GateState
 release gs = gather [] >>= \cs -> lift $ runGate (mapM_ push cs) gs >>= \(_, ngs) -> return ngs 

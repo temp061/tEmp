@@ -13,7 +13,7 @@ program = tEmp
 # option = -g
 
 $(program): $(SOURCES)
-	ghc -o $(program) $(SOURCES) -threaded -prof -rtsopts
+	ghc -o $(program) $(SOURCES) -threaded -prof -auto-all -rtsopts
 
 .SUFFIXES: .hs .o
 
