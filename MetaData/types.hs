@@ -47,7 +47,7 @@ newtype Binder = Binder {
                           clips :: [Clip]
                         } deriving (Show, Typeable)
 
-data Operation = Add | Remove | Search | Look | Get deriving (Show, Eq, Read, Ord) 
+data Operation = Add | Remove | Search | Look | Get | Append deriving (Show, Eq, Read, Ord) 
 
 emptyBinder :: Binder
 emptyBinder = Binder []

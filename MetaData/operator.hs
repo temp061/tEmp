@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, TupleSections #-}
+{-# LANGUAGE ScopedTypeVariables, TupleSections, ViewPatterns #-}
 
 module MetaData.Operator (operation, features) where
 
@@ -12,6 +12,7 @@ import Data.Time.Clock
 
 import MetaData.Clip
 import MetaData.Types
+import Net.Gate (Destination) 
 
 import Control.Applicative
 import Text.Parsec hiding (many, option, (<|>))
@@ -19,7 +20,8 @@ import Text.Parsec hiding (many, option, (<|>))
 opMap = Map.fromList [ (Add, handleOn add),
                        (Remove, handleOn remove), 
                        (Look, look),
-                       (Get, get)
+                       (Get, get),
+                       (Append, append)
                        -- (Search, handleOn search)
                      ]
 
@@ -27,7 +29,7 @@ features :: [(String, Signature)]
 features = map (,MetaData) supports
 
 supports :: [String]
-supports = ["Add", "Look", "Remove", "Get"]
+supports = ["Add", "Look", "Remove", "Get", "Append"]
 
 operation :: Procedure
 operation = fetch >>= handle
@@ -39,25 +41,29 @@ handle m  = let (op, args) = translate m
                  Nothing -> post (UIOut, NM "error MetaData.Operation error")
                >> operation
 
-handleOn :: (Binder -> Clip -> Binder) -> [String] -> Maybe (ClientThread ())
+handleOn :: (Binder -> Clip -> Binder) -> String -> Maybe (ClientThread ())
 handleOn op [] = Nothing
 handleOn op args = Just $ do (CS s) <- getStatus
                              t <- lift getCurrentTime
-                             let clips = map (cliping t) (tokenize args)
+                             let clips = map (cliping t) (tokenize $ words args)
                                  Just b = cast s
                              setStatus $ CS $ foldl' op b clips
     where
       cliping :: UTCTime -> (String, String) -> Clip
       cliping t (uri, md) = Clip t uri md
 
-get :: [String] -> Maybe (ClientThread ())
-get (dest:code:_) = Just $ do (CS s) <- getStatus
-                              let Just b :: Maybe Binder = cast s
-                              post ((read dest::Signature), NM $ code ++ " " ++ show (clips b))
-                              return ()
+get :: String -> Maybe (ClientThread ())
+get (words -> (dest:code:_)) = Just $ do (CS s) <- getStatus
+                                         let Just b :: Maybe Binder = cast s
+                                         post ((read dest::Signature), NM $ code ++ " " ++ show (clips b))
 
-look :: [String] -> Maybe (ClientThread ())
-look _ = get ["UIOut", "output"]
+look :: String -> Maybe (ClientThread ())
+look _ = get "UIOut output"
+
+append :: String -> Maybe (ClientThread ())
+append (read -> recv :: [(Clip, Destination)]) = Just $ do (CS s) <- getStatus
+                                                           let Just b :: Maybe Binder = cast s
+                                                           (setStatus $ CS (b {clips = (clips b) ++ (map fst recv)}))
 
 tokenize :: [String] -> [(String, String)]
 tokenize [] = []
@@ -78,6 +84,6 @@ tokenize (x:xs) = let (us, ms) = parse' x
       residue = many1 $ noneOf ",|"
       scheme = (++) <$> (try (string "https") <|> string "http") <*> (string "://")
 
-translate :: NormalMessage -> (Operation, [String])
+translate :: NormalMessage -> (Operation, String)
 translate (NM msg) = let op:args = words msg
-                     in (read op, args)
+                     in (read op, unwords args)

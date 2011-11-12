@@ -26,10 +26,14 @@ operation = lift initialState >>= operation'
 
 -- lift $ runGate procedure
 land :: GateState -> ClientThread GateState
-land gs = (lift $ runGate (land' []) gs) >>= \(rs, ngs) -> (if rs == [] then return () else post (UIOut, NM $ "output " ++ show rs)) >> return ngs
+land gs = (lift $ runGate (land' []) gs) >>= \(rs, ngs) -> 
+          (if rs == []
+           then return ()
+           else post (MetaData, NM $ "Append " ++ show rs)) >>
+          return ngs
     where
       land' :: [(Clip,Destination)] -> Gate [(Clip,Destination)]
-      land' cs = pop >>= \recv -> if recv == [] then return [] else land' $ recv ++ cs
+      land' cs = pop >>= \recv -> if recv == [] then return cs else land' (recv ++ cs)
 
 release :: GateState -> ClientThread GateState
 release gs = gather [] >>= \cs -> lift $ runGate (mapM_ push cs) gs >>= \(_, ngs) -> return ngs 
