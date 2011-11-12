@@ -9,6 +9,7 @@ import Data.List
 import Utility.Prim
 import Control.Concurrent.STM
 import Control.Concurrent
+import Control.Monad
 
 import Numeric
 import Data.Char
@@ -43,6 +44,7 @@ push c = get >>= \gs -> lift $ atomically $ writeTChan (sendQ gs) c
 
 pop :: Gate [(Clip, Destination)]
 pop = get >>= \gs -> lift $ readTVarIO $ receivedPool gs
+-- pop = get >>= \gs -> lift $ atomically $ readTVar (receivedPool gs) >>= \pool -> if pool == [] then retry else return pool 
 
 kick :: Destination -> Gate ()
 kick   dest = adjust links delete dest
@@ -57,7 +59,10 @@ updateTVarIO :: TVar a -> (a -> a) -> IO ()
 updateTVarIO source func = readTVarIO source >>= \target -> atomically $ writeTVar source (func target)
 
 host :: Destination
-host = namingDest $ SockAddrInet (PortNum $ read servicePort) 0x0100007F -- 0x0100007F === 127.0.0.1
+host = namingDest $ SockAddrInet (PortNum $ 0xdc07) 0x0100007F -- 0x0100007F === 127.0.0.1
+
+own :: HostName
+own = "127.0.0.1"
 
 servicePort :: ServiceName
 servicePort = "2011" -- ポート2011の意味
@@ -82,8 +87,9 @@ runGate act gs = runStateT act gs
 
 postProc :: TVar [(Clip, Destination)] -> TVar [Destination] -> TVar [Destination] -> IO ()
 postProc pool tls tbl = withSocketsDo $ do
-                          (postinfo:_) <- getAddrInfo (Just (defaultHints {addrFlags = [AI_PASSIVE]})) Nothing (Just servicePort)
+                          (postinfo:_) <- getAddrInfo (Just (defaultHints {addrFlags = [AI_PASSIVE]})) (Just own) (Just servicePort)
                           sock <- socket (addrFamily postinfo) Stream defaultProtocol
+                          putStrLn $ show $ addrAddress postinfo
                           bindSocket sock $ addrAddress postinfo
                           listen sock 5 -- 5は接続待ちキューの長さ。最大はシステム依存(通常5)
                           standby sock
@@ -123,6 +129,7 @@ sendSocket dest = withSocketsDo $ do
                     (addrinfo:_) <- getAddrInfo Nothing hostname portno
                     sock <- socket (addrFamily addrinfo) Stream defaultProtocol
                     setSocketOption sock KeepAlive 1
+                    putStrLn $ show addr
                     connect sock addr
                     h <- socketToHandle sock WriteMode
                     hSetBuffering h LineBuffering
@@ -130,7 +137,7 @@ sendSocket dest = withSocketsDo $ do
 
 -- linkToHandle:[複数to複数]対応なのでちょっと気に入らない
 sendProc :: TChan Clip -> TVar [Destination] -> IO ()
-sendProc ch tls = atomically (readTChan ch) >>= \clip -> 
+sendProc ch tls = forever $ atomically (readTChan ch) >>= \clip -> 
                   searchLink tls >> linkToHandle tls >>= mapM_ (flip hPutStrLn $ show clip)
     where
       linkToHandle tls = readTVarIO tls >>= mapM sendSocket 

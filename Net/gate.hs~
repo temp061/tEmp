@@ -1,3 +1,0 @@
-module Net.Gate where
-
-import Network.Socket

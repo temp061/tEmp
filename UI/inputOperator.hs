@@ -21,7 +21,7 @@ opList = [ ("input", inputStd) ] -- ,etc ...
 features :: [(String, Signature)] 
 features = []
 
-allFeature = features {- ++ AI.features -} ++ Net.features ++ UIOut.features ++ MetaData.features
+allFeature = features ++ AI.features ++ Net.features ++ UIOut.features ++ MetaData.features
 
 operation :: Procedure
 operation = genOperation handle opList

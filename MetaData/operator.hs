@@ -4,6 +4,8 @@ module MetaData.Operator (operation, features) where
 
 import Data.Typeable
 import qualified Data.Map as Map
+import Control.Monad.Trans
+import Data.List
 
 import Utility.Prim
 import Data.Time.Clock
@@ -16,7 +18,8 @@ import Text.Parsec hiding (many, option, (<|>))
 
 opMap = Map.fromList [ (Add, handleOn add),
                        (Remove, handleOn remove), 
-                       (Look, look)
+                       (Look, look),
+                       (Get, get)
                        -- (Search, handleOn search)
                      ]
 
@@ -24,10 +27,10 @@ features :: [(String, Signature)]
 features = map (,MetaData) supports
 
 supports :: [String]
-supports = ["Add", "Look", "Remove"]
+supports = ["Add", "Look", "Remove", "Get"]
 
 operation :: Procedure
-operation = {- liftMT (putStrLn "MetaData.Operator.") >> -} fetch >>= handle
+operation = fetch >>= handle
 
 handle :: NormalMessage -> ClientThread ()
 handle m  = let (op, args) = translate m
@@ -37,26 +40,24 @@ handle m  = let (op, args) = translate m
                >> operation
 
 handleOn :: (Binder -> Clip -> Binder) -> [String] -> Maybe (ClientThread ())
-handleOn func [] = Nothing
-handleOn func args = Just $ do (CS s) <- getStatus
-                               t <- liftMT getCurrentTime
-                               let dl = tokenize args
-                                   cl = loop t dl
-                                   Just b = cast s
-                               setStatus $ CS $ oploop b cl
-    where 
-      oploop b [] = b
-      oploop b (c:cl) = oploop (func b c) cl
+handleOn op [] = Nothing
+handleOn op args = Just $ do (CS s) <- getStatus
+                             t <- lift getCurrentTime
+                             let clips = map (cliping t) (tokenize args)
+                                 Just b = cast s
+                             setStatus $ CS $ foldl' op b clips
+    where
+      cliping :: UTCTime -> (String, String) -> Clip
+      cliping t (uri, md) = Clip t uri md
 
-      loop :: UTCTime -> [(String, String)] -> [Clip]
-      loop _ [] = []
-      loop t ((uri, md):xs) = (Clip t uri md) : (loop t xs)
+get :: [String] -> Maybe (ClientThread ())
+get (dest:code:_) = Just $ do (CS s) <- getStatus
+                              let Just b :: Maybe Binder = cast s
+                              post ((read dest::Signature), NM $ code ++ " " ++ show (clips b))
+                              return ()
 
 look :: [String] -> Maybe (ClientThread ())
-look _ = Just $ do (CS s) <- getStatus
-                   let Just b :: Maybe Binder = cast s
-                   post (UIOut, NM $ "output " ++ show b)
-                   return ()
+look _ = get ["UIOut", "output"]
 
 tokenize :: [String] -> [(String, String)]
 tokenize [] = []
@@ -68,14 +69,14 @@ tokenize (x:xs) = let (us, ms) = parse' x
       parse' cs = case parse p "(input toknizer)" cs of
                     Left err -> error $ show err
                     Right r -> r
-      p {-parser-} = liftA2 (,) uris ((char '|') *> mds)
+      p {-parser-} = (,) <$> uris <*> ((char '|') *> mds)
       uris = (uri `sepBy1` (char ','))
       mds =  (md `sepBy1` (char ','))
       md  = many1 $ noneOf ","   -- ::Parsec String
-      uri = liftA3 (\a b c-> a ++ b ++ c) scheme authority residue
-      authority = liftA2 (++) (many1 $ noneOf "/") (string "/")
+      uri = (\a b c-> a ++ b ++ c) <$> scheme <*> authority <*> residue
+      authority = (++) <$> (many1 $ noneOf "/") <*> (string "/")
       residue = many1 $ noneOf ",|"
-      scheme = liftA2 (++) (try (string "https") <|> string "http") (string "://")
+      scheme = (++) <$> (try (string "https") <|> string "http") <*> (string "://")
 
 translate :: NormalMessage -> (Operation, [String])
 translate (NM msg) = let op:args = words msg

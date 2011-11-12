@@ -14,7 +14,7 @@ features :: [(String, Signature)]
 features = map (,Net) supports
 
 supports :: [String]
-supports = ["Add"]
+supports = ["Release"]
 
 defaultWaitMicroSecond = 1000000
 
@@ -26,7 +26,7 @@ operation = lift initialState >>= operation'
 
 -- lift $ runGate procedure
 land :: GateState -> ClientThread GateState
-land gs = (lift $ runGate (land' []) gs) >>= \(rs, ngs) -> post (AI, NM $ "Add " ++ show rs) >> post (UIOut, NM $ "output " ++ show rs) >> return ngs
+land gs = (lift $ runGate (land' []) gs) >>= \(rs, ngs) -> (if rs == [] then return () else post (UIOut, NM $ "output " ++ show rs)) >> return ngs
     where
       land' :: [(Clip,Destination)] -> Gate [(Clip,Destination)]
       land' cs = pop >>= \recv -> if recv == [] then return [] else land' $ recv ++ cs
@@ -36,5 +36,5 @@ release gs = gather [] >>= \cs -> lift $ runGate (mapM_ push cs) gs >>= \(_, ngs
     where
       gather :: [Clip] -> ClientThread [Clip]
       gather cs = tryFetch >>= \req -> case req of 
-                                         Just (NM c) -> let _:x:_ = words c in gather ((read x):cs) 
+                                         Just (NM c) -> let _:xs = words c in gather ((read $ unwords xs) ++ cs) 
                                          Nothing     -> return cs  -- "End of the Loop"
