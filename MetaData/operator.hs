@@ -2,20 +2,26 @@
 
 module MetaData.Operator (operation, features) where
 
-import Data.Typeable
+import Network.URI
+
+import Text.Parsec hiding (many, option, (<|>))
+
 import qualified Data.Map as Map
-import Control.Monad.Trans
+import Data.Time.Clock
+import Data.Typeable
 import Data.List
+import Data.Maybe
+
+import Control.Monad.Trans
+import Control.Applicative
 
 import Utility.Prim
-import Data.Time.Clock
 
 import MetaData.Clip
 import MetaData.Types
-import Net.Gate (Destination) 
+import MetaData.Binder
 
-import Control.Applicative
-import Text.Parsec hiding (many, option, (<|>))
+import Net.Gate (Destination) 
 
 opMap = Map.fromList [ (Add, handleOn add),
                        (Remove, handleOn remove), 
@@ -50,7 +56,7 @@ handleOn op args = Just $ do (CS s) <- getStatus
                              setStatus $ CS $ foldl' op b clips
     where
       cliping :: UTCTime -> (String, String) -> Clip
-      cliping t (uri, md) = Clip t uri md
+      cliping t (uri, md) = Clip t (fromJust $ parseURI uri) md
 
 get :: String -> Maybe (ClientThread ())
 get (words -> (dest:code:_)) = Just $ do (CS s) <- getStatus
@@ -68,21 +74,18 @@ append (read -> recv :: [(Clip, Destination)]) = Just $ do (CS s) <- getStatus
 tokenize :: [String] -> [(String, String)]
 tokenize [] = []
 tokenize (x:xs) = let (us, ms) = parse' x
-                  in (concatMap (\u -> map (\m -> (u,m)) ms) us) ++ tokenize xs
+                  in (concatMap (\u -> map (u,) ms) us) ++ tokenize xs
     where
       -- ["uri1|md1,md2","uri2,uri3|md3,md4"]
       parse' :: String ->([String], [String])
-      parse' cs = case parse p "(input toknizer)" cs of
+      parse' cs = case parse tokenizer "(input toknizer)" cs of
                     Left err -> error $ show err
                     Right r -> r
-      p {-parser-} = (,) <$> uris <*> ((char '|') *> mds)
+      tokenizer = (,) <$> uris <*> ((char '|') *> mds)
       uris = (uri `sepBy1` (char ','))
       mds =  (md `sepBy1` (char ','))
-      md  = many1 $ noneOf ","   -- ::Parsec String
-      uri = (\a b c-> a ++ b ++ c) <$> scheme <*> authority <*> residue
-      authority = (++) <$> (many1 $ noneOf "/") <*> (string "/")
-      residue = many1 $ noneOf ",|"
-      scheme = (++) <$> (try (string "https") <|> string "http") <*> (string "://")
+      uri = many1 $ noneOf ",|"
+      md  = many1 $ noneOf ","
 
 translate :: NormalMessage -> (Operation, String)
 translate (NM msg) = let op:args = words msg

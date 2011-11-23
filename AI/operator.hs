@@ -9,7 +9,7 @@ import qualified Data.Map as Map
 import Utility.Prim
 import Utility.Message
 
-import MetaData.Types hiding (Operation(..))
+import MetaData.Clip
 
 opMap = Map.fromList [
          ("Add", add), 

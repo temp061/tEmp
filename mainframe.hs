@@ -8,7 +8,8 @@ module Main (main) where
 import qualified Data.Map as Map
 import Control.Concurrent
 import Utility.Prim
-import MetaData.Types
+import MetaData.Binder
+
 import qualified UI.InputOperator as UIIn
 import qualified UI.OutputOperator as UIOut
 import qualified MetaData.Operator as MetaData
@@ -16,7 +17,7 @@ import qualified Net.Operator as Net
 import qualified AI.Operator as AI
 
 procedures :: [(Signature, Procedure, ClientState)] 
-procedures = [(UIIn, UIIn.operation, UnitState), (UIOut, UIOut.operation, UnitState), (MetaData, MetaData.operation, CS emptyBinder), (Net, Net.operation, UnitState), (AI, AI.operation, UnitState)]
+procedures = [(UIIn, UIIn.operation, UnitState), (UIOut, UIOut.operation, UnitState), (MetaData, MetaData.operation, CS MetaData.Binder.empty), (Net, Net.operation, UnitState), (AI, AI.operation, UnitState)]
 
 main :: IO ()
 main = runMT (threadManager procedures) () Map.empty

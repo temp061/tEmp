@@ -8,7 +8,7 @@ import Control.Monad.Trans
 import Utility.Prim
 import Utility.Message
 import Net.Gate
-import MetaData.Types
+import MetaData.Clip
 
 features :: [(String, Signature)] 
 features = map (,Net) supports
