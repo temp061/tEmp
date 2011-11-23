@@ -50,6 +50,8 @@
         liftM2 or liftA2
  
         (<$>) = fmap
+
+push test
         fmap a b === a <$> b
         lift :: (a -> b) -> m a -> m b
         =:= (a -> b) -> f a -> f b === fmap
