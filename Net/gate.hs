@@ -128,7 +128,7 @@ receiver sock pool dest tls = do hdl <- socketToHandle sock ReadMode
                                  receiver' $ lines msg
     where
       receiver' [] = return ()
-      receiver' (r:rs) = readTVarIO tls >>= \ls -> if dest `elem` ls
+      receiver' (r:rs) = readTVarIO tls >>= \ls -> if dest `elem` ls -- BLにdestが追加されると、lsから除去されるため、このifではじかれてreceiver'が終了する
                                                    then (atomically $ readTVar pool >>= \p -> writeTVar pool (((read r), dest):p)) >> receiver' rs 
                                                    else return ()
                                   
